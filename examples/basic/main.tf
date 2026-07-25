@@ -50,6 +50,13 @@ module "lambda" {
   runtime       = "python3.12"
   filename      = var.package_path
 
+  # Without this, rebuilding package.zip in place is never redeployed. The
+  # fileexists guard only exists so this example can be validated before the
+  # package is built; real configurations should call filebase64sha256 directly.
+  source_code_hash = fileexists(var.package_path) ? filebase64sha256(var.package_path) : null
+
+  log_retention_in_days = 7
+
   environment_variables = {
     STAGE = "sandbox"
   }
@@ -62,4 +69,8 @@ module "lambda" {
 
 output "function_arn" {
   value = module.lambda.arn
+}
+
+output "log_group_name" {
+  value = module.lambda.log_group_name
 }
