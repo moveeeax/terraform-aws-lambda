@@ -36,6 +36,12 @@ variable "s3_key" {
   default     = null
 }
 
+variable "s3_object_version" {
+  description = "Version of the S3 object containing the deployment package, when s3_bucket is set. Without this, Terraform always deploys whatever object currently lives at s3_key, so on a versioned bucket another process overwriting that key changes what gets deployed without Terraform ever seeing a diff to plan. Only valid alongside s3_bucket."
+  type        = string
+  default     = null
+}
+
 variable "memory_size" {
   description = "Amount of memory in megabytes the function has access to."
   type        = number
@@ -93,6 +99,12 @@ variable "create_log_group" {
   description = "Whether to manage the function's CloudWatch log group. When false, Lambda creates /aws/lambda/<function_name> implicitly with unbounded retention and Terraform never destroys it."
   type        = bool
   default     = true
+}
+
+variable "log_group_kms_key_id" {
+  description = "ARN of a customer managed KMS key used to encrypt the function's log group at rest. Only used when create_log_group is true. When null, CloudWatch Logs uses its own encryption with no customer managed key."
+  type        = string
+  default     = null
 }
 
 variable "log_retention_in_days" {
