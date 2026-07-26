@@ -10,6 +10,7 @@ resource "aws_cloudwatch_log_group" "this" {
 
   name              = local.log_group_name
   retention_in_days = var.log_retention_in_days
+  kms_key_id        = var.log_group_kms_key_id
   tags              = var.tags
 }
 
@@ -19,10 +20,11 @@ resource "aws_lambda_function" "this" {
   handler       = var.handler
   runtime       = var.runtime
 
-  filename         = var.filename
-  s3_bucket        = var.s3_bucket
-  s3_key           = var.s3_key
-  source_code_hash = var.source_code_hash
+  filename          = var.filename
+  s3_bucket         = var.s3_bucket
+  s3_key            = var.s3_key
+  s3_object_version = var.s3_object_version
+  source_code_hash  = var.source_code_hash
 
   memory_size = var.memory_size
   timeout     = var.timeout
@@ -66,6 +68,11 @@ resource "aws_lambda_function" "this" {
     precondition {
       condition     = var.s3_bucket == null || var.s3_key != null
       error_message = "s3_key must be set when the deployment package comes from s3_bucket."
+    }
+
+    precondition {
+      condition     = var.s3_object_version == null || var.s3_bucket != null
+      error_message = "s3_object_version only applies to a package sourced from s3_bucket."
     }
   }
 }

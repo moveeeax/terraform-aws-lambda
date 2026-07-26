@@ -60,6 +60,10 @@ A runnable example lives in [`examples/basic`](examples/basic).
   you to a runtime that AWS has since deprecated. Check the
   [runtime support policy](https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html)
   when choosing a value.
+- **Set `s3_object_version` on a versioned bucket.** Without it, Terraform
+  always deploys whatever object currently sits at `s3_key`. If something else
+  overwrites that key — another pipeline, a manual upload — the function's
+  code changes without Terraform ever planning a diff.
 
 ## Testing
 
@@ -95,6 +99,7 @@ whenever `s3_bucket` is. Both rules are enforced at plan time.
 | `filename`                       | Path to a local deployment package (zip).                                                | `string`      | `null`  |    no    |
 | `s3_bucket`                      | S3 bucket containing the deployment package.                                             | `string`      | `null`  |    no    |
 | `s3_key`                         | S3 key of the deployment package.                                                        | `string`      | `null`  |    no    |
+| `s3_object_version`              | Version of the S3 object, when `s3_bucket` is set. Pins the deploy on a versioned bucket. | `string`      | `null`  |    no    |
 | `source_code_hash`               | Base64 SHA256 of the package; required for in-place zip rebuilds to be redeployed.       | `string`      | `null`  |    no    |
 | `publish`                        | Publish an immutable version on every code change.                                       | `bool`        | `false` |    no    |
 | `memory_size`                    | Amount of memory in megabytes.                                                           | `number`      | `128`   |    no    |
@@ -103,6 +108,7 @@ whenever `s3_bucket` is. Both rules are enforced at plan time.
 | `kms_key_arn`                    | CMK used to encrypt environment variables at rest.                                       | `string`      | `null`  |    no    |
 | `dead_letter_target_arn`         | SQS queue or SNS topic for events that failed all async invocation attempts.              | `string`      | `null`  |    no    |
 | `create_log_group`               | Manage the function's CloudWatch log group.                                              | `bool`        | `true`  |    no    |
+| `log_group_kms_key_id`           | CMK used to encrypt the managed log group at rest.                                       | `string`      | `null`  |    no    |
 | `log_retention_in_days`          | Retention for the managed log group. `0` means never expire.                             | `number`      | `14`    |    no    |
 | `environment_variables`          | Map of environment variables.                                                            | `map(string)` | `{}`    |    no    |
 | `tags`                           | Tags applied to the function and log group.                                              | `map(string)` | `{}`    |    no    |

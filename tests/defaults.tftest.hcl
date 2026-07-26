@@ -165,3 +165,153 @@ run "rejects_s3_bucket_without_key" {
 
   expect_failures = [aws_lambda_function.this]
 }
+
+run "s3_object_version_is_wired_through" {
+  command = plan
+
+  variables {
+    filename  = null
+    s3_bucket = "unit-test-artifacts"
+    s3_key    = "fn.zip"
+
+    s3_object_version = "3sL4kqtJlcpXroDTDmJ+rmSpXd3dIbrHY+MTRCxf3vjVBH40Nrjfkd"
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.s3_object_version == "3sL4kqtJlcpXroDTDmJ+rmSpXd3dIbrHY+MTRCxf3vjVBH40Nrjfkd"
+    error_message = "s3_object_version must reach the function so a versioned bucket pins the exact object deployed."
+  }
+}
+
+run "rejects_s3_object_version_without_bucket" {
+  command = plan
+
+  variables {
+    # filename stays the default; s3_bucket is never set.
+    s3_object_version = "3sL4kqtJlcpXroDTDmJ+rmSpXd3dIbrHY+MTRCxf3vjVBH40Nrjfkd"
+  }
+
+  expect_failures = [aws_lambda_function.this]
+}
+
+run "log_group_kms_key_id_is_wired_through" {
+  command = plan
+
+  variables {
+    log_group_kms_key_id = "arn:aws:kms:us-east-1:111111111111:key/00000000-0000-0000-0000-000000000000"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_log_group.this[0].kms_key_id == "arn:aws:kms:us-east-1:111111111111:key/00000000-0000-0000-0000-000000000000"
+    error_message = "log_group_kms_key_id must reach the managed log group."
+  }
+}
+
+run "reserved_concurrency_zero_disables_without_being_rejected" {
+  command = plan
+
+  variables {
+    reserved_concurrent_executions = 0
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.reserved_concurrent_executions == 0
+    error_message = "0 is a valid, distinct value from the -1 default and must not be rejected by validation."
+  }
+}
+
+run "log_retention_zero_means_never_expire_and_is_accepted" {
+  command = plan
+
+  variables {
+    log_retention_in_days = 0
+  }
+
+  assert {
+    condition     = aws_cloudwatch_log_group.this[0].retention_in_days == 0
+    error_message = "0 (never expire) is a valid CloudWatch retention value and must not be rejected by validation."
+  }
+}
+
+run "all_optional_features_combined" {
+  command = plan
+
+  variables {
+    publish                        = true
+    kms_key_arn                    = "arn:aws:kms:us-east-1:111111111111:key/00000000-0000-0000-0000-000000000000"
+    dead_letter_target_arn         = "arn:aws:sqs:us-east-1:111111111111:unit-test-dlq"
+    log_group_kms_key_id           = "arn:aws:kms:us-east-1:111111111111:key/11111111-1111-1111-1111-111111111111"
+    source_code_hash               = "hFV2p3wLZ0wLh4v8H2xJ8sJ2mQ4kQZ0e5xWjJhFqQ1c="
+    environment_variables          = { STAGE = "test" }
+    reserved_concurrent_executions = 5
+    log_retention_in_days          = 90
+
+    tags = {
+      Environment = "test"
+      ManagedBy   = "terraform"
+    }
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.publish == true
+    error_message = "publish must stay true when explicitly enabled alongside every other optional feature."
+  }
+
+  assert {
+    condition     = one(aws_lambda_function.this.dead_letter_config).target_arn == "arn:aws:sqs:us-east-1:111111111111:unit-test-dlq"
+    error_message = "dead_letter_target_arn must still be wired through when combined with the other optional flags."
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.reserved_concurrent_executions == 5
+    error_message = "reserved_concurrent_executions must still be wired through when combined with the other optional flags."
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.tags["Environment"] == "test"
+    error_message = "tags must reach the function even when every optional feature is enabled at once."
+  }
+
+  assert {
+    condition     = aws_cloudwatch_log_group.this[0].tags["Environment"] == "test"
+    error_message = "tags must reach the managed log group even when every optional feature is enabled at once."
+  }
+
+  assert {
+    condition     = aws_cloudwatch_log_group.this[0].retention_in_days == 90
+    error_message = "log_retention_in_days must still be honored when combined with the other optional flags."
+  }
+}
+
+run "creates_with_initial_configuration" {
+  command = apply
+
+  assert {
+    condition     = aws_lambda_function.this.memory_size == 128
+    error_message = "Initial apply must use the default memory_size."
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.reserved_concurrent_executions == -1
+    error_message = "Initial apply must use the default (unlimited) concurrency."
+  }
+}
+
+run "updates_memory_and_concurrency_in_place" {
+  command = apply
+
+  variables {
+    memory_size                    = 256
+    reserved_concurrent_executions = 10
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.memory_size == 256
+    error_message = "A changed memory_size must be applied in place on top of prior state."
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.reserved_concurrent_executions == 10
+    error_message = "A changed reserved_concurrent_executions must be applied in place on top of prior state."
+  }
+}
