@@ -9,7 +9,7 @@ bounded, and exposes the invoke ARN so event sources can be wired to it.
 
 ```hcl
 module "lambda" {
-  source = "github.com/moveeeax/terraform-aws-lambda"
+  source = "github.com/moveeeax/terraform-aws-lambda?ref=v1.0.0" # pin to a release tag
 
   function_name = "api-handler"
   role_arn      = aws_iam_role.lambda.arn
