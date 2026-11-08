@@ -31,6 +31,12 @@ resource "aws_lambda_function" "this" {
   role          = var.role_arn
   handler       = var.handler
   runtime       = var.runtime
+  architectures = var.architectures
+
+  # package_type forces replacement, so it defaults to Zip, the value the
+  # provider and Lambda already assume for functions created before it existed.
+  package_type = var.package_type
+  image_uri    = var.image_uri
 
   filename          = var.filename
   s3_bucket         = var.s3_bucket
@@ -65,6 +71,15 @@ resource "aws_lambda_function" "this" {
     }
   }
 
+  dynamic "image_config" {
+    for_each = var.image_config == null ? [] : [var.image_config]
+    content {
+      command           = image_config.value.command
+      entry_point       = image_config.value.entry_point
+      working_directory = image_config.value.working_directory
+    }
+  }
+
   dynamic "vpc_config" {
     for_each = var.vpc_config == null ? [] : [var.vpc_config]
     content {
@@ -87,8 +102,28 @@ resource "aws_lambda_function" "this" {
 
   lifecycle {
     precondition {
-      condition     = (var.filename != null) != (var.s3_bucket != null)
-      error_message = "Exactly one of filename or s3_bucket must be set."
+      condition     = length([for source in [var.filename, var.s3_bucket, var.image_uri] : source if source != null]) == 1
+      error_message = "Exactly one of filename, s3_bucket or image_uri must be set."
+    }
+
+    precondition {
+      condition     = (var.package_type == "Image") == (var.image_uri != null)
+      error_message = "image_uri is required when package_type is Image and only valid then; use filename or s3_bucket for a Zip package."
+    }
+
+    precondition {
+      condition     = var.package_type != "Zip" || (var.handler != null && var.runtime != null)
+      error_message = "handler and runtime must be set when package_type is Zip."
+    }
+
+    precondition {
+      condition     = var.package_type != "Image" || (var.handler == null && var.runtime == null)
+      error_message = "handler and runtime come from the container image when package_type is Image; leave them null and use image_config to override the entrypoint."
+    }
+
+    precondition {
+      condition     = var.image_config == null || var.package_type == "Image"
+      error_message = "image_config only applies when package_type is Image."
     }
 
     precondition {

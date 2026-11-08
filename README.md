@@ -1,8 +1,8 @@
 # terraform-aws-lambda
 
 Terraform module that manages an [AWS Lambda](https://aws.amazon.com/lambda/)
-function. It creates a single function from either a local zip or an S3
-deployment package, manages the function's CloudWatch log group so retention is
+function. It creates a single function from a local zip, an S3 deployment
+package or a container image in ECR, manages the function's CloudWatch log group so retention is
 bounded, and exposes the invoke ARN so event sources can be wired to it.
 
 ## Usage
@@ -56,14 +56,43 @@ A runnable example lives in [`examples/basic`](examples/basic).
   and outside Terraform's lifecycle. Set `create_log_group = false` if the group
   already exists and is managed elsewhere, otherwise the first apply fails with
   `ResourceAlreadyExistsException` — or import it first.
-- **`runtime` has no default** on purpose, so this module cannot silently pin
-  you to a runtime that AWS has since deprecated. Check the
+- **`runtime` has no default value** on purpose, so this module cannot silently
+  pin you to a runtime that AWS has since deprecated. It is required for Zip
+  packages and must stay unset for images. Check the
   [runtime support policy](https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html)
   when choosing a value.
 - **Set `s3_object_version` on a versioned bucket.** Without it, Terraform
   always deploys whatever object currently sits at `s3_key`. If something else
   overwrites that key — another pipeline, a manual upload — the function's
   code changes without Terraform ever planning a diff.
+
+## Container images and arm64
+
+Set `package_type = "Image"` and `image_uri` to deploy a container image from
+ECR. `handler` and `runtime` come from the image, so leave them unset;
+`image_config` overrides the image's `CMD`, `ENTRYPOINT` and `WORKDIR`:
+
+```hcl
+  # handler, runtime, filename and s3_bucket stay unset.
+  package_type  = "Image"
+  image_uri     = "${aws_ecr_repository.fn.repository_url}@${data.aws_ecr_image.fn.image_digest}"
+  architectures = ["arm64"]
+
+  image_config = {
+    command = ["app.handler"]
+  }
+```
+
+Pin the image by digest rather than by tag: Terraform only redeploys when
+`image_uri` changes, so pushing a new image under the same tag goes unnoticed.
+
+`architectures = ["arm64"]` runs the function on Graviton and works for Zip
+packages too. Lambda accepts one architecture per function. The default `null`
+leaves it to Lambda, which uses `x86_64`. An image must be built for the
+architecture it runs on.
+
+`package_type` forces replacement of the function, so it defaults to `Zip` and
+switching an existing function to `Image` destroys and recreates it.
 
 ## VPC networking
 
@@ -113,15 +142,21 @@ requirement; the module itself still supports >= 1.5.
 
 ## Inputs
 
-Exactly one of `filename` or `s3_bucket` must be set; `s3_key` is required
-whenever `s3_bucket` is. Both rules are enforced at plan time.
+Exactly one of `filename`, `s3_bucket` or `image_uri` must be set; `s3_key` is
+required whenever `s3_bucket` is. `image_uri` and `image_config` require
+`package_type = "Image"`; `handler` and `runtime` are required for `Zip` and
+rejected for `Image`. All of these rules are enforced at plan time.
 
 | Name                             | Description                                                                              | Type          | Default | Required |
 |----------------------------------|------------------------------------------------------------------------------------------|---------------|---------|:--------:|
 | `function_name`                  | Name of the Lambda function.                                                             | `string`      | n/a     |   yes    |
 | `role_arn`                       | ARN of the execution IAM role.                                                           | `string`      | n/a     |   yes    |
-| `handler`                        | Function entrypoint in your code.                                                        | `string`      | n/a     |   yes    |
-| `runtime`                        | Runtime the function runs on.                                                            | `string`      | n/a     |   yes    |
+| `handler`                        | Function entrypoint in your code. Required for `Zip`.                                    | `string`      | `null`  |    no    |
+| `runtime`                        | Runtime the function runs on. Required for `Zip`.                                        | `string`      | `null`  |    no    |
+| `package_type`                   | `Zip` or `Image`. Changing it replaces the function.                                     | `string`      | `"Zip"` |    no    |
+| `image_uri`                      | ECR image URI, when `package_type` is `Image`. Pin by digest.                            | `string`      | `null`  |    no    |
+| `image_config`                   | Overrides for the image's `command`, `entry_point` and `working_directory`.               | `object`      | `null`  |    no    |
+| `architectures`                  | `["x86_64"]` or `["arm64"]`. `null` lets Lambda use `x86_64`.                             | `list(string)` | `null` |    no    |
 | `filename`                       | Path to a local deployment package (zip).                                                | `string`      | `null`  |    no    |
 | `s3_bucket`                      | S3 bucket containing the deployment package.                                             | `string`      | `null`  |    no    |
 | `s3_key`                         | S3 key of the deployment package.                                                        | `string`      | `null`  |    no    |

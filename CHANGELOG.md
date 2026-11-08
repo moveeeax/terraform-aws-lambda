@@ -14,9 +14,18 @@ All notable changes to this module are documented here. The format follows
   `AWSLambdaVPCAccessExecutionRole` policy to the role in `role_arn` and creates
   the function after the attachment; `attach_vpc_access_policy = false` opts
   out. Without `vpc_config` nothing changes.
+- Container images and arm64: optional `package_type` (`Zip` by default, or
+  `Image`), `image_uri`, `image_config` (`command`, `entry_point`,
+  `working_directory`) and `architectures` (`["x86_64"]` or `["arm64"]`, null
+  by default so Lambda keeps using x86_64). Plan-time preconditions require
+  exactly one of `filename`, `s3_bucket` or `image_uri`, tie `image_uri` and
+  `image_config` to `Image`, and require `handler` and `runtime` for `Zip` only.
 
 ### Changed
 
+- `handler` and `runtime` are no longer required inputs (default `null`), since
+  image functions take them from the image. A Zip package still fails at plan
+  time without them.
 - Minimum AWS provider raised from 5.0 to 5.23, the first release with
   `vpc_config.ipv6_allowed_for_dual_stack` on `aws_lambda_function`.
 

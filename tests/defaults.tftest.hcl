@@ -73,6 +73,21 @@ run "optional_blocks_are_absent_by_default" {
     condition     = length(aws_iam_role_policy_attachment.vpc_access) == 0
     error_message = "The caller's role must not be touched unless vpc_config is supplied."
   }
+
+  assert {
+    condition     = aws_lambda_function.this.package_type == "Zip"
+    error_message = "package_type forces replacement and must keep defaulting to Zip."
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.image_uri == null
+    error_message = "No image_uri should be set for a Zip package."
+  }
+
+  assert {
+    condition     = length(aws_lambda_function.this.image_config) == 0
+    error_message = "No image_config block should be emitted unless one is supplied."
+  }
 }
 
 run "encryption_and_dlq_are_wired_through" {
@@ -405,6 +420,184 @@ run "rejects_vpc_config_without_security_groups" {
   }
 
   expect_failures = [var.vpc_config]
+}
+
+run "container_image_on_arm64" {
+  command = plan
+
+  variables {
+    filename      = null
+    handler       = null
+    runtime       = null
+    package_type  = "Image"
+    image_uri     = "111111111111.dkr.ecr.us-east-1.amazonaws.com/unit-test@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    architectures = ["arm64"]
+
+    image_config = {
+      command           = ["app.handler"]
+      working_directory = "/var/task"
+    }
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.package_type == "Image"
+    error_message = "package_type must reach the function."
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.image_uri == "111111111111.dkr.ecr.us-east-1.amazonaws.com/unit-test@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    error_message = "image_uri must reach the function."
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.architectures == tolist(["arm64"])
+    error_message = "architectures must reach the function."
+  }
+
+  assert {
+    condition     = one(aws_lambda_function.this.image_config).command == tolist(["app.handler"])
+    error_message = "image_config.command must reach the function."
+  }
+
+  assert {
+    condition     = one(aws_lambda_function.this.image_config).working_directory == "/var/task"
+    error_message = "image_config.working_directory must reach the function."
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.handler == null && aws_lambda_function.this.runtime == null
+    error_message = "handler and runtime must stay unset for an Image package."
+  }
+}
+
+run "zip_package_on_arm64" {
+  command = plan
+
+  variables {
+    architectures = ["arm64"]
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.architectures == tolist(["arm64"])
+    error_message = "arm64 must also work for a Zip package."
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.package_type == "Zip"
+    error_message = "Setting architectures must not change package_type."
+  }
+}
+
+run "rejects_unknown_package_type" {
+  command = plan
+
+  variables {
+    package_type = "Jar"
+  }
+
+  expect_failures = [var.package_type]
+}
+
+run "rejects_unknown_architecture" {
+  command = plan
+
+  variables {
+    architectures = ["arm32"]
+  }
+
+  expect_failures = [var.architectures]
+}
+
+run "rejects_multiple_architectures" {
+  command = plan
+
+  variables {
+    architectures = ["x86_64", "arm64"]
+  }
+
+  expect_failures = [var.architectures]
+}
+
+run "rejects_image_uri_alongside_filename" {
+  command = plan
+
+  variables {
+    handler      = null
+    runtime      = null
+    package_type = "Image"
+    image_uri    = "111111111111.dkr.ecr.us-east-1.amazonaws.com/unit-test@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+
+  expect_failures = [aws_lambda_function.this]
+}
+
+run "rejects_image_package_without_image_uri" {
+  command = plan
+
+  variables {
+    filename     = null
+    handler      = null
+    runtime      = null
+    package_type = "Image"
+  }
+
+  expect_failures = [aws_lambda_function.this]
+}
+
+run "rejects_image_uri_on_zip_package" {
+  command = plan
+
+  variables {
+    filename  = null
+    image_uri = "111111111111.dkr.ecr.us-east-1.amazonaws.com/unit-test@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+
+  expect_failures = [aws_lambda_function.this]
+}
+
+run "rejects_zip_package_without_runtime" {
+  command = plan
+
+  variables {
+    runtime = null
+  }
+
+  expect_failures = [aws_lambda_function.this]
+}
+
+run "rejects_zip_package_without_handler" {
+  command = plan
+
+  variables {
+    handler = null
+  }
+
+  expect_failures = [aws_lambda_function.this]
+}
+
+run "rejects_runtime_on_image_package" {
+  command = plan
+
+  variables {
+    filename     = null
+    handler      = null
+    package_type = "Image"
+    image_uri    = "111111111111.dkr.ecr.us-east-1.amazonaws.com/unit-test@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+
+  expect_failures = [aws_lambda_function.this]
+}
+
+run "rejects_image_config_on_zip_package" {
+  command = plan
+
+  variables {
+    image_config = {
+      command = ["app.handler"]
+    }
+  }
+
+  expect_failures = [aws_lambda_function.this]
 }
 
 run "creates_with_initial_configuration" {

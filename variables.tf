@@ -9,23 +9,63 @@ variable "role_arn" {
 }
 
 variable "handler" {
-  description = "Function entrypoint in your code, for example index.handler."
+  description = "Function entrypoint in your code, for example index.handler. Required when package_type is Zip; must be null for Image, where the image defines it."
   type        = string
+  default     = null
 }
 
 variable "runtime" {
-  description = "Runtime the function runs on, for example python3.12 or nodejs20.x."
+  description = "Runtime the function runs on, for example python3.12 or nodejs20.x. Required when package_type is Zip; must be null for Image. There is deliberately no default runtime."
   type        = string
+  default     = null
+}
+
+variable "package_type" {
+  description = "Deployment package type: Zip (from filename or s3_bucket) or Image (a container image in ECR, from image_uri). Changing it replaces the function."
+  type        = string
+  default     = "Zip"
+
+  validation {
+    condition     = contains(["Zip", "Image"], var.package_type)
+    error_message = "package_type must be Zip or Image."
+  }
+}
+
+variable "image_uri" {
+  description = "ECR image URI of the function's container image, for example 111111111111.dkr.ecr.us-east-1.amazonaws.com/fn@sha256:<digest>. Required when package_type is Image; mutually exclusive with filename and s3_bucket. Pin by digest so a retagged image is redeployed with a plan diff."
+  type        = string
+  default     = null
+}
+
+variable "image_config" {
+  description = "Overrides for the container image's CMD (command), ENTRYPOINT (entry_point) and WORKDIR (working_directory). Only valid when package_type is Image; null keeps the values baked into the image."
+  type = object({
+    command           = optional(list(string))
+    entry_point       = optional(list(string))
+    working_directory = optional(string)
+  })
+  default = null
+}
+
+variable "architectures" {
+  description = "Instruction set the function runs on: [\"x86_64\"] or [\"arm64\"] (Graviton). When null, Lambda uses x86_64. For an Image package the image must be built for the same architecture."
+  type        = list(string)
+  default     = null
+
+  validation {
+    condition     = var.architectures == null ? true : length(var.architectures) == 1 && alltrue([for arch in var.architectures : contains(["x86_64", "arm64"], arch)])
+    error_message = "architectures must hold exactly one of x86_64 or arm64."
+  }
 }
 
 variable "filename" {
-  description = "Path to a local deployment package (zip). Mutually exclusive with s3_bucket."
+  description = "Path to a local deployment package (zip). Mutually exclusive with s3_bucket and image_uri."
   type        = string
   default     = null
 }
 
 variable "s3_bucket" {
-  description = "S3 bucket containing the deployment package. Mutually exclusive with filename."
+  description = "S3 bucket containing the deployment package. Mutually exclusive with filename and image_uri."
   type        = string
   default     = null
 }
