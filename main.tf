@@ -14,6 +14,18 @@ resource "aws_cloudwatch_log_group" "this" {
   tags              = var.tags
 }
 
+# A function attached to a VPC reaches it through ENIs that Lambda creates with
+# the execution role, so the role needs ec2:CreateNetworkInterface and friends.
+# The role is owned by the caller; only the AWS managed policy is attached here,
+# and only while vpc_config is set. The role name and partition are taken from
+# role_arn so roles with a path and non-commercial partitions work.
+resource "aws_iam_role_policy_attachment" "vpc_access" {
+  count = var.vpc_config != null && var.attach_vpc_access_policy ? 1 : 0
+
+  role       = element(split("/", var.role_arn), length(split("/", var.role_arn)) - 1)
+  policy_arn = "arn:${split(":", var.role_arn)[1]}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+}
+
 resource "aws_lambda_function" "this" {
   function_name = var.function_name
   role          = var.role_arn
@@ -53,11 +65,25 @@ resource "aws_lambda_function" "this" {
     }
   }
 
+  dynamic "vpc_config" {
+    for_each = var.vpc_config == null ? [] : [var.vpc_config]
+    content {
+      subnet_ids                  = vpc_config.value.subnet_ids
+      security_group_ids          = vpc_config.value.security_group_ids
+      ipv6_allowed_for_dual_stack = vpc_config.value.ipv6_allowed_for_dual_stack
+    }
+  }
+
   tags = var.tags
 
   # Create the managed log group first so the function cannot beat Terraform to
-  # it and leave an unmanaged, never-expiring group behind.
-  depends_on = [aws_cloudwatch_log_group.this]
+  # it and leave an unmanaged, never-expiring group behind. The VPC policy
+  # attachment must also exist first: CreateFunction rejects a VPC config when
+  # the role cannot create network interfaces yet.
+  depends_on = [
+    aws_cloudwatch_log_group.this,
+    aws_iam_role_policy_attachment.vpc_access,
+  ]
 
   lifecycle {
     precondition {

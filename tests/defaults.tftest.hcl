@@ -63,6 +63,16 @@ run "optional_blocks_are_absent_by_default" {
     condition     = aws_lambda_function.this.publish == false
     error_message = "Publishing versions must stay opt-in."
   }
+
+  assert {
+    condition     = length(aws_lambda_function.this.vpc_config) == 0
+    error_message = "The function must stay outside any VPC unless vpc_config is supplied."
+  }
+
+  assert {
+    condition     = length(aws_iam_role_policy_attachment.vpc_access) == 0
+    error_message = "The caller's role must not be touched unless vpc_config is supplied."
+  }
 }
 
 run "encryption_and_dlq_are_wired_through" {
@@ -281,6 +291,120 @@ run "all_optional_features_combined" {
     condition     = aws_cloudwatch_log_group.this[0].retention_in_days == 90
     error_message = "log_retention_in_days must still be honored when combined with the other optional flags."
   }
+}
+
+run "vpc_config_is_wired_through" {
+  command = plan
+
+  variables {
+    vpc_config = {
+      subnet_ids         = ["subnet-0aaaaaaaaaaaaaaaa", "subnet-0bbbbbbbbbbbbbbbb"]
+      security_group_ids = ["sg-0cccccccccccccccc"]
+    }
+  }
+
+  assert {
+    condition     = toset(one(aws_lambda_function.this.vpc_config).subnet_ids) == toset(["subnet-0aaaaaaaaaaaaaaaa", "subnet-0bbbbbbbbbbbbbbbb"])
+    error_message = "vpc_config.subnet_ids must reach the function."
+  }
+
+  assert {
+    condition     = toset(one(aws_lambda_function.this.vpc_config).security_group_ids) == toset(["sg-0cccccccccccccccc"])
+    error_message = "vpc_config.security_group_ids must reach the function."
+  }
+
+  assert {
+    condition     = one(aws_lambda_function.this.vpc_config).ipv6_allowed_for_dual_stack == false
+    error_message = "Dual-stack IPv6 must stay off unless explicitly enabled."
+  }
+
+  assert {
+    condition     = aws_iam_role_policy_attachment.vpc_access[0].role == "unit-test"
+    error_message = "The VPC access policy must be attached to the role named in role_arn."
+  }
+
+  assert {
+    condition     = aws_iam_role_policy_attachment.vpc_access[0].policy_arn == "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+    error_message = "The AWS managed VPC access policy must be attached when vpc_config is set."
+  }
+}
+
+run "vpc_access_policy_handles_role_paths_and_partitions" {
+  command = plan
+
+  variables {
+    role_arn = "arn:aws-us-gov:iam::111111111111:role/service-role/unit-test"
+
+    vpc_config = {
+      subnet_ids                  = ["subnet-0aaaaaaaaaaaaaaaa"]
+      security_group_ids          = ["sg-0cccccccccccccccc"]
+      ipv6_allowed_for_dual_stack = true
+    }
+  }
+
+  assert {
+    condition     = aws_iam_role_policy_attachment.vpc_access[0].role == "unit-test"
+    error_message = "The role name must be the last segment of role_arn, without the IAM path."
+  }
+
+  assert {
+    condition     = aws_iam_role_policy_attachment.vpc_access[0].policy_arn == "arn:aws-us-gov:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+    error_message = "The managed policy ARN must use the partition of role_arn."
+  }
+
+  assert {
+    condition     = one(aws_lambda_function.this.vpc_config).ipv6_allowed_for_dual_stack == true
+    error_message = "ipv6_allowed_for_dual_stack must reach the function when enabled."
+  }
+}
+
+run "vpc_access_policy_can_be_skipped" {
+  command = plan
+
+  variables {
+    attach_vpc_access_policy = false
+
+    vpc_config = {
+      subnet_ids         = ["subnet-0aaaaaaaaaaaaaaaa"]
+      security_group_ids = ["sg-0cccccccccccccccc"]
+    }
+  }
+
+  assert {
+    condition     = length(aws_iam_role_policy_attachment.vpc_access) == 0
+    error_message = "attach_vpc_access_policy = false must leave the caller's role alone."
+  }
+
+  assert {
+    condition     = length(aws_lambda_function.this.vpc_config) == 1
+    error_message = "Skipping the policy attachment must not drop the VPC config."
+  }
+}
+
+run "rejects_vpc_config_without_subnets" {
+  command = plan
+
+  variables {
+    vpc_config = {
+      subnet_ids         = []
+      security_group_ids = ["sg-0cccccccccccccccc"]
+    }
+  }
+
+  expect_failures = [var.vpc_config]
+}
+
+run "rejects_vpc_config_without_security_groups" {
+  command = plan
+
+  variables {
+    vpc_config = {
+      subnet_ids         = ["subnet-0aaaaaaaaaaaaaaaa"]
+      security_group_ids = []
+    }
+  }
+
+  expect_failures = [var.vpc_config]
 }
 
 run "creates_with_initial_configuration" {
