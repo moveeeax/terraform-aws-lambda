@@ -65,6 +65,32 @@ A runnable example lives in [`examples/basic`](examples/basic).
   overwrites that key — another pipeline, a manual upload — the function's
   code changes without Terraform ever planning a diff.
 
+## VPC networking
+
+Set `vpc_config` to attach the function to private subnets, for example to
+reach RDS or VPC endpoints:
+
+```hcl
+  vpc_config = {
+    subnet_ids         = module.vpc.private_subnet_ids
+    security_group_ids = [aws_security_group.lambda.id]
+  }
+```
+
+Lambda reaches the VPC through network interfaces it creates with the
+execution role, so that role needs the EC2 network interface permissions. When
+`vpc_config` is set the module attaches the AWS managed
+`AWSLambdaVPCAccessExecutionRole` policy to the role named in `role_arn` and
+creates the function only after the attachment exists. Set
+`attach_vpc_access_policy = false` if the role already has those permissions or
+its policy attachments are managed exclusively elsewhere (for example with
+`aws_iam_role_policy_attachments_exclusive`), otherwise the two will fight.
+
+A function in a VPC has no internet access unless its subnets route through a
+NAT gateway; reach AWS services through VPC endpoints or NAT. Set
+`ipv6_allowed_for_dual_stack = true` to allow outbound IPv6 through dual-stack
+subnets.
+
 ## Testing
 
 The module ships a [`terraform test`](tests/) suite that runs offline against a
@@ -83,7 +109,7 @@ requirement; the module itself still supports >= 1.5.
 | Name      | Version  |
 |-----------|----------|
 | terraform | >= 1.5   |
-| aws       | >= 5.0   |
+| aws       | >= 5.23  |
 
 ## Inputs
 
@@ -107,6 +133,8 @@ whenever `s3_bucket` is. Both rules are enforced at plan time.
 | `reserved_concurrent_executions` | Reserved concurrency. `-1` is unlimited; **`0` disables the function**.                   | `number`      | `-1`    |    no    |
 | `kms_key_arn`                    | CMK used to encrypt environment variables at rest.                                       | `string`      | `null`  |    no    |
 | `dead_letter_target_arn`         | SQS queue or SNS topic for events that failed all async invocation attempts.              | `string`      | `null`  |    no    |
+| `vpc_config`                     | Subnets and security groups for VPC access; see [VPC networking](#vpc-networking).      | `object`      | `null`  |    no    |
+| `attach_vpc_access_policy`       | Attach `AWSLambdaVPCAccessExecutionRole` to the role when `vpc_config` is set.          | `bool`        | `true`  |    no    |
 | `create_log_group`               | Manage the function's CloudWatch log group.                                              | `bool`        | `true`  |    no    |
 | `log_group_kms_key_id`           | CMK used to encrypt the managed log group at rest.                                       | `string`      | `null`  |    no    |
 | `log_retention_in_days`          | Retention for the managed log group. `0` means never expire.                             | `number`      | `14`    |    no    |

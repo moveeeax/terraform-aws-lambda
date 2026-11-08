@@ -95,6 +95,27 @@ variable "dead_letter_target_arn" {
   default     = null
 }
 
+variable "vpc_config" {
+  description = "Subnets and security groups that attach the function to a VPC, for example to reach RDS or private endpoints. When null (the default) the function runs outside any VPC. Set ipv6_allowed_for_dual_stack to allow outbound IPv6 traffic through dual-stack subnets."
+  type = object({
+    subnet_ids                  = list(string)
+    security_group_ids          = list(string)
+    ipv6_allowed_for_dual_stack = optional(bool, false)
+  })
+  default = null
+
+  validation {
+    condition     = var.vpc_config == null ? true : length(var.vpc_config.subnet_ids) > 0 && length(var.vpc_config.security_group_ids) > 0
+    error_message = "vpc_config needs at least one subnet_id and one security_group_id; set vpc_config = null to run outside a VPC."
+  }
+}
+
+variable "attach_vpc_access_policy" {
+  description = "Whether to attach the AWS managed AWSLambdaVPCAccessExecutionRole policy to the role in role_arn when vpc_config is set. Has no effect without vpc_config. Set to false if the role already grants the EC2 network interface permissions, or if its policy attachments are managed exclusively elsewhere."
+  type        = bool
+  default     = true
+}
+
 variable "create_log_group" {
   description = "Whether to manage the function's CloudWatch log group. When false, Lambda creates /aws/lambda/<function_name> implicitly with unbounded retention and Terraform never destroys it."
   type        = bool
